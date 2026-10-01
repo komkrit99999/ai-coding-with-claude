@@ -4,16 +4,20 @@
   "private": true,
   "type": "module",
   "description": "น้ำท่วมไหม: teaching example for the AI Coding with Claude course (CodePassion Academy). Not an official flood warning service.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
+    "build:vercel": "tsx scripts/build-vercel.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit"
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.2"

@@ -1,12 +1,15 @@
 import { basinDistricts, basinProvinces, districts, resolveDistrictId, resolveReportDistrictId } from "./districts.ts"
-import { createReportStore, toPublicReport, type ReportStore } from "./reports.ts"
+import { createReportStore, reportsOpen, toPublicReport, type ReportStore } from "./reports.ts"
 import { latestReading, stationsIn } from "./stations.ts"
 import { toBangkokIso } from "./time.ts"
 
 export type Response = { status: number; body: unknown; headers?: Record<string, string> }
 
-/** `clientKey` is only for the rate limiter; it must never reach a report, response or log (RPT-REQ-009). */
-export type Context = { now: Date; clientKey?: string; reports?: ReportStore }
+/**
+ * `clientKey` is only for the rate limiter; it must never reach a report, response or log (RPT-REQ-009).
+ * `reportsOpenUntil` closes new reports from that instant; undefined means always open (RPT-REQ-018).
+ */
+export type Context = { now: Date; clientKey?: string; reports?: ReportStore; reportsOpenUntil?: Date }
 
 const defaultReports = createReportStore()
 
@@ -15,7 +18,8 @@ export const NOTICE = "ตัวอย่างเพื่อการเรี
 /** Route one request. Kept free of node:http so it is easy to test. */
 export function handle(method: string, path: string, body: unknown, ctx: Context = { now: new Date() }): Response {
   if (method === "GET" && path === "/districts") {
-    return { status: 200, body: { notice: NOTICE, districts: [...districts.values()] } }
+    const open = reportsOpen(ctx.reportsOpenUntil, ctx.now)
+    return { status: 200, body: { notice: NOTICE, districts: [...districts.values()], reportsOpen: open } }
   }
 
   const reports = ctx.reports ?? defaultReports
@@ -23,6 +27,8 @@ export function handle(method: string, path: string, body: unknown, ctx: Context
   // A district is a P-code (TH1038) or, for one release, an old Bangkok slug (lat-phrao).
   const reportsMatch = path.match(/^\/districts\/([A-Za-z0-9-]+)\/reports$/)
   if (method === "POST" && reportsMatch) {
+    // Checked before the district and the quota, so a closed window costs no quota (RPT-REQ-018).
+    if (!reportsOpen(ctx.reportsOpenUntil, ctx.now)) return { status: 403, body: { notice: NOTICE, error: "reports_closed" } }
     // Any อำเภอ/เขต in the basin takes reports; the flood tab still lists only its 12 Bangkok เขต (north-water 04).
     const districtId = resolveReportDistrictId(reportsMatch[1] ?? "")
     if (!districtId) return { status: 404, body: { notice: NOTICE, error: "unknown district" } }

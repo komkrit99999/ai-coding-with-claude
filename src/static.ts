@@ -16,7 +16,9 @@ const FILES: Record<string, { file: string; type: string }> = {
   "/fonts/noto-sans-thai-thai.woff2": { file: "fonts/noto-sans-thai-thai.woff2", type: "font/woff2" },
   "/fonts/noto-sans-thai-latin.woff2": { file: "fonts/noto-sans-thai-latin.woff2", type: "font/woff2" },
   "/app.css": { file: "app.css", type: "text/css; charset=utf-8" },
-  // Protomaps extracts (ADR 0001): Bangkok in detail, Thailand to about z10. Not in git; see README.
+  // Disallows everything: the data is made up and must not turn up in search results.
+  "/robots.txt": { file: "robots.txt", type: "text/plain; charset=utf-8" },
+  // Protomaps extracts (ADR 0001): Bangkok in detail (in git), Thailand to about z10 (not yet; see README).
   "/tiles/bangkok.pmtiles": { file: "tiles/bangkok.pmtiles", type: "application/octet-stream" },
   "/tiles/thailand.pmtiles": { file: "tiles/thailand.pmtiles", type: "application/octet-stream" },
   // จังหวัด and อำเภอ outlines of the Chao Phraya basin, from HDX COD-AB (scripts/build-districts.mjs).
@@ -93,6 +95,29 @@ function parseRange(header: string, size: number): Range | undefined {
   return range.start <= range.end && range.start < size ? range : undefined
 }
 
+/** Every listed page file: URL path, file under the public folder, content type. */
+export function pageFiles(): { path: string; file: string; type: string }[] {
+  return Object.entries(FILES).map(([path, entry]) => ({ path, ...entry }))
+}
+
+/**
+ * Response headers for one listed file. Used by `serveStatic` and by the Vercel build, so the page gets
+ * the same CSP and caching from the CDN as from `npm start` (ADR 0003).
+ */
+export function fileHeaders(path: string, type: string): Record<string, string> {
+  const headers: Record<string, string> = { "content-type": type, "x-content-type-options": "nosniff", "x-robots-tag": "noindex, nofollow" }
+  if (type.startsWith("text/html")) {
+    headers["content-security-policy"] = CSP
+    headers["referrer-policy"] = "no-referrer"
+    headers["cache-control"] = "no-cache"
+  }
+  if (path.startsWith("/fonts/")) headers["cache-control"] = "public, max-age=31536000, immutable"
+  // Vendored URLs carry no version, so a bump must reach browsers: cache for a day, not for good.
+  if (path.startsWith("/vendor/")) headers["cache-control"] = "public, max-age=86400"
+  if (path.startsWith("/tiles/")) headers["accept-ranges"] = "bytes"
+  return headers
+}
+
 /**
  * Serve a listed file for GET. Returns false when the path is not a listed file or the file does
  * not exist, so the caller can fall through to the API router and its 404.
@@ -111,19 +136,8 @@ export function serveStatic(req: IncomingMessage, res: ServerResponse, path: str
     return false
   }
 
-  const headers: Record<string, string> = { "content-type": entry.type, "x-content-type-options": "nosniff" }
-  if (entry.type.startsWith("text/html")) {
-    headers["content-security-policy"] = CSP
-    headers["referrer-policy"] = "no-referrer"
-    headers["cache-control"] = "no-cache"
-  }
-
-  if (path.startsWith("/fonts/")) headers["cache-control"] = "public, max-age=31536000, immutable"
-  // Vendored URLs carry no version, so a bump must reach browsers: cache for a day, not for good.
-  if (path.startsWith("/vendor/")) headers["cache-control"] = "public, max-age=86400"
-
+  const headers = fileHeaders(path, entry.type)
   if (path.startsWith("/tiles/")) {
-    headers["accept-ranges"] = "bytes"
     const rangeHeader = req.headers.range
     if (rangeHeader !== undefined) {
       const range = parseRange(rangeHeader, size)

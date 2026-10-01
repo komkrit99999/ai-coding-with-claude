@@ -125,6 +125,25 @@ export function parseIsoWithOffset(raw: string): Date | undefined {
   return new Date(Date.UTC(year, month - 1, day, hour, minute, second, ms) - offsetMs)
 }
 
+/** Reports are closed from this instant: a time in the past, for a missing or unreadable setting (RPT-REQ-018). */
+const CLOSED = new Date(0)
+
+/**
+ * When reporting closes, from `REPORTS_OPEN_UNTIL` (strict ISO with Z or ±HH:MM). Undefined means no window,
+ * always open: only off Vercel with nothing set, so local runs and the class repo work as before. On Vercel a
+ * missing or unreadable value means closed, so a forgotten or mistyped setting fails closed (RPT-REQ-018).
+ */
+export function reportsOpenUntilFromEnv(env: Record<string, string | undefined>): Date | undefined {
+  const raw = env.REPORTS_OPEN_UNTIL?.trim()
+  if (!raw) return env.VERCEL === "1" ? CLOSED : undefined
+  return parseIsoWithOffset(raw) ?? CLOSED
+}
+
+/** Whether a new report may be sent at `now` (RPT-REQ-018). */
+export function reportsOpen(openUntil: Date | undefined, now: Date): boolean {
+  return openUntil === undefined || now.getTime() < openUntil.getTime()
+}
+
 /** Validate the whole body at the boundary (RPT-REQ-003..007). Never echoes the input back. */
 export function validateReportInput(input: unknown, now: Date): ValidInput | Invalid {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return invalid("invalid_body")

@@ -48,7 +48,7 @@ curl -X POST localhost:3000/districts/lat-phrao/reports \
 - ตัวแผนที่ใช้ MapLibre GL JS กับไฟล์ PMTiles ที่ host เอง (ดู [ADR 0001](docs/adr/0001-maplibre-pmtiles-basemap.md))
   ไฟล์ทุกอย่างของแผนที่ (MapLibre, pmtiles, basemaps, glyphs, sprites) อยู่ใน `public/vendor/` และเสิร์ฟจาก server นี้ หน้าเว็บไม่ดึงอะไรจากเว็บอื่น
 - **ตำแหน่งหมุดเป็นค่าประมาณจากเขต** API ไม่เก็บพิกัดของผู้รายงาน (spec §5, RPT-REQ-013)
-- ไฟล์แผนที่พื้นหลังไม่อยู่ใน git ถ้ายังไม่มี หน้าเว็บยังแสดงหมุดบนพื้นเรียบได้ อยากได้ถนนและชื่อสถานที่ให้สร้างไฟล์เอง:
+- ไฟล์แผนที่กรุงเทพฯ (`public/tiles/bangkok.pmtiles`) อยู่ใน git แล้ว ถ้าจะตัดไฟล์ใหม่ให้ข้อมูลไม่เก่า:
 
 ```bash
 # ติดตั้ง pmtiles CLI: https://docs.protomaps.com/pmtiles/cli
@@ -130,3 +130,12 @@ glyphs มีเฉพาะ Noto Sans Regular/Medium ช่วงละติ�
 git fetch --tags
 git switch -c my-try cp4-plan   # เริ่มทำต่อจากจุดที่ต้องการ
 ```
+
+## Deploy บน Vercel (demo ห้องเรียน)
+
+ดู [ADR 0003](docs/adr/0003-deploy-on-vercel.md) `vercel.json` ให้ Vercel รัน `npm run build:vercel` ซึ่งเขียน `.vercel/output` เอง (esbuild รวม API เป็น function เดียว และ CDN ส่งไฟล์หน้าเว็บ) ไม่ต้องตั้งค่า framework ใน dashboard
+
+- **ปิดรับรายงานเป็นค่าเริ่มต้น:** ก่อนสอนให้ตั้ง env `REPORTS_OPEN_UNTIL` บน Vercel เป็นเวลาที่จะปิด เช่น `2026-10-08T12:00:00+07:00` แล้ว redeploy พอถึงเวลานั้นระบบจะปิดเอง ถ้าไม่ได้ตั้งหรือค่าอ่านไม่ได้ ระบบจะปิดรับรายงาน (RPT-REQ-018)
+- **รายงานอยู่ใน memory:** บน Vercel อาจหายหรือเห็นไม่ตรงกันระหว่างเครื่อง เพราะ function มีหลายตัว ต้องบอกนักเรียนก่อน
+- **ไม่ให้ search engine index:** ทุก response มี `X-Robots-Tag: noindex` และ `robots.txt` ห้ามทุกหน้า เพราะข้อมูลเป็นข้อมูลสมมติ
+- ลอง build บนเครื่อง: `npm run build:vercel` แล้วดูผลใน `.vercel/output`

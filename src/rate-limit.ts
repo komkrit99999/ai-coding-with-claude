@@ -101,3 +101,19 @@ export function clientKeyFromAddress(addr: string | undefined): string {
   }
   return groups.slice(0, 4).map((g) => g.toString(16)).join(":") + "::/64"
 }
+
+/**
+ * Rate-limit key for one request. Off Vercel: the socket address only (RPT-REQ-009). On Vercel the socket
+ * is Vercel's proxy, so the key comes from `x-vercel-forwarded-for`, which Vercel overwrites with the
+ * real client address on every request, so a client cannot choose it (ADR 0003). Nothing else is read.
+ */
+export function clientKeyFromRequest(
+  socketAddress: string | undefined,
+  headers: Record<string, string | string[] | undefined>,
+  onVercel: boolean
+): string {
+  if (!onVercel) return clientKeyFromAddress(socketAddress)
+  const raw = headers["x-vercel-forwarded-for"]
+  const first = (Array.isArray(raw) ? raw[0] : raw)?.split(",")[0]?.trim()
+  return clientKeyFromAddress(first)
+}

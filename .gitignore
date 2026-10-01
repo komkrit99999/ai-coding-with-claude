@@ -8,3 +8,5 @@ CLAUDE.local.md
 .hermes/
 .kiro
 .DS_Store
+# Vercel build output and local link (npm run build:vercel)
+.vercel/

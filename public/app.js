@@ -124,6 +124,8 @@
     const list = await api("/districts")
     if (list.status !== 200) throw new Error("districts")
     if (list.body.notice) $("notice").textContent = list.body.notice
+    // ปิดรับรายงาน: hide the buttons rather than let someone fill the form and get a 403 (RPT-REQ-018).
+    document.body.classList.toggle("reports-closed", list.body.reportsOpen === false)
     state.districts = list.body.districts
     CENTRES = Object.fromEntries(state.districts.map((d) => [d.id, d.centre]))
     const details = await Promise.all(state.districts.map((d) => api(`/districts/${d.id}`)))

@@ -130,6 +130,10 @@ Client key มาจาก `req.socket.remoteAddress` เท่านั้น *
 - AC4: `JSON.stringify` ของ report ที่เก็บและ response ไม่มี clientKey
 - AC5: `handle("POST", …, ctx ไม่มี clientKey)` ยังถูกจำกัดโควตาใน bucket `unknown`
 
+**แก้ไข 2026-10-01 (deploy บน Vercel, ADR 0003):** บน Vercel socket address เป็น proxy ของ Vercel จึงใช้ `x-vercel-forwarded-for` แทน (Vercel เขียนทับ header นี้ทุกครั้ง) ผ่าน `clientKeyFromRequest` ใน `src/rate-limit.ts` แล้ว normalize ด้วย `clientKeyFromAddress` เหมือนเดิม ที่อื่นยังใช้ socket address อย่างเดียว ข้อห้ามเก็บหรือ log key ยังเหมือนเดิม
+- AC6: บน Vercel key มาจาก `x-vercel-forwarded-for` (IPv6 ยังรวมเป็น /64) ไม่อ่าน `X-Forwarded-For`/`Forwarded` และถ้าไม่มี header ให้ใช้ bucket `unknown`
+- AC7: นอก Vercel ถ้ามีคนส่ง `x-vercel-forwarded-for` มา โควตาต้องไม่เปลี่ยน
+
 ### RPT-REQ-010 รวมรายงานซ้ำ
 
 dedupe key = `districtId` + `"\u0000"` + (จุดสังเกตหลัง REQ-004/005 แปลง lowercase) ค้นเฉพาะรายงานที่ยังไม่หมดอายุ ถ้าเจอ → ไม่สร้างใหม่ เพิ่ม `confirmations` ขึ้น 1 และถ้า `seenAt` ใหม่ **ใหม่กว่า** ของเดิม ให้อัปเดต `seenAt`, `depthLevel`, `depthCm` เป็นของรายงานใหม่ (การตัดสินใจ A1: ใหม่กว่าชนะ) ตอบ `200` `merged: true`
@@ -208,7 +212,7 @@ Record ที่เก็บมี field เท่ากับ `Report` ใน �
 
 ทุก response ของ API ทั้ง endpoint ใหม่และเดิม ทั้งสำเร็จและ error มี `notice: NOTICE` รวม `404` เดิมใน `handle()` (`unknown district` ของ GET, `not found`) และ error ที่สร้างใน `server.ts` (`400 invalid JSON`, `413`, `500`) รายงานทุกชิ้นที่แสดงมี `label` ตาม REQ-011 เพราะ NOTICE เดิมบอกว่าข้อมูลเป็นข้อมูลสมมติ ไม่ได้บอกว่าเป็นข้อมูลที่ผู้ใช้รายงาน
 
-- AC1: `201`, `200`, `400`, `404`, `413`, `429`, `503` ของ `POST /districts/:id/reports` มี `notice`
+- AC1: `201`, `200`, `400`, `403`, `404`, `413`, `429`, `503` ของ `POST /districts/:id/reports` มี `notice`
 - AC2: `400 invalid JSON`, `413`, `500` ที่สร้างใน `server.ts` มี `notice`
 - AC3: `GET /districts/atlantis` และ `GET /nope` ตอบ `404` พร้อม `notice` และ `error` เดิม (`"unknown district"`, `"not found"`)
 - AC4: test เดิมใน `tests/app.test.ts` ยังผ่านโดยไม่แก้ไฟล์ (ตรวจแค่ `status` ของ 404 และใช้ `toMatchObject` จึงเข้ากันได้)
@@ -218,10 +222,20 @@ Record ที่เก็บมี field เท่ากับ `Report` ใน �
 - Logic อยู่ใน `src/reports.ts` และ `src/rate-limit.ts` ไม่ import `node:http` `handle()` ยังเป็น function บริสุทธิ์ที่ inject ได้ (`Context` เพิ่ม field ที่ optional)
 - ไม่เพิ่ม dependency ใหม่ ใช้ `node:crypto` (`randomUUID`) ที่มากับ Node
 - feature ไม่เรียก network ออกภายนอกเลย โดยเฉพาะ `flood-api.rooptanjai.com`
-- AC1: `package.json` `dependencies`/`devDependencies` ไม่เปลี่ยน
+- AC1: `package.json` `dependencies`/`devDependencies` ไม่เปลี่ยน (แก้ไข 2026-10-01: เพิ่ม `esbuild` เป็น devDependency สำหรับ build บน Vercel, ADR 0003)
 - AC2: test stub `globalThis.fetch` และ `node:http(s).request` แล้วยืนยันว่าไม่ถูกเรียกตลอด flow
 - AC3: `npm test` และ `npm run lint` ผ่าน โดยไฟล์ test เดิมไม่ถูกแก้
 - AC4: test แต่ละไฟล์สร้าง store และ limiter ใหม่ผ่าน `Context` ไม่พึ่ง state ร่วมข้าม test
+
+### RPT-REQ-018 ปิดรับรายงานนอกช่วงสอน (เพิ่ม 2026-10-01, ADR 0003)
+
+demo บน Vercel เปิดให้ส่งรายงานเฉพาะช่วงสอน `REPORTS_OPEN_UNTIL` (ISO 8601 ที่มี `Z` หรือ `±HH:MM`) เป็นเวลาที่ปิดรับรายงาน adapter แปลงค่านี้เป็น `Context.reportsOpenUntil` ผ่าน `reportsOpenUntilFromEnv` เพื่อให้ `handle()` ยังไม่อ่าน env และไม่เรียก `new Date()` เอง บน Vercel ถ้าไม่ได้ตั้งค่า หรือค่าอ่านไม่ได้ ให้ถือว่าปิด นอก Vercel ถ้าไม่ได้ตั้งค่า ให้เปิดตลอดเหมือนเดิม การแก้ env บน Vercel ต้อง redeploy ถึงจะมีผล ตั้งค่าครั้งเดียวก่อนสอน แล้วระบบจะปิดเองเมื่อถึงเวลา บน Vercel รายงานอาจหายได้ เพราะอยู่ใน memory ของ function แต่ละตัว (ADR 0003)
+
+- AC1: `POST /districts/:id/reports` เมื่อ `ctx.now ≥ reportsOpenUntil` ตอบ `403 { notice, error: "reports_closed" }` ก่อนตรวจเขตและโควตา จึงไม่กินโควตา
+- AC2: ก่อนถึงเวลานั้น POST ทำงานตามเดิม ตรงเวลานั้นพอดีถือว่าปิดแล้ว
+- AC3: `GET /districts` มี `reportsOpen: boolean` เพิ่ม โดยไม่แก้ key เดิม หน้าเว็บใช้ค่านี้ซ่อนปุ่มแจ้งทั้งสองแท็บ และแสดงข้อความว่าปิดรับรายงาน
+- AC4: GET อื่นทุกตัวไม่เปลี่ยน รายงานที่ส่งมาก่อนปิดยังแสดงจนหมดอายุ (REQ-012)
+- AC5: บน Vercel ไม่ได้ตั้งค่า, ค่าว่าง, หรือค่าที่ไม่มี offset → ปิด
 
 ## 3. Design
 
